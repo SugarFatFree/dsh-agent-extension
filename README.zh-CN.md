@@ -93,7 +93,7 @@ whenToUse: Before publishing a changed API
 Review the changed API surface.
 ```
 
-可选 frontmatter 字段 `disable-model-invocation`、`user-invocable` 与 `metadata` 会透传给 DSH。
+可选 frontmatter 字段 `disable-model-invocation`、`user-invocable` 与 `metadata` 会透传给 DSH。技能通过 DSH 的 Skills 目录及 `/` 的技能来源显示，而不是仅命令来源；某个发现目录内不可读的文件会被跳过，不会隐藏其他目录中的技能。
 
 ## 按路径生效的规则
 
@@ -120,7 +120,7 @@ Agent 成功读取、写入或编辑匹配的工作区文件后，匹配规则�
 /dsh-extension-status
 ```
 
-该命令会输出调用该命令的会话工作目录、扫描的根目录及已发现的命令。已发现的项目命令会注册到会话命令目录并显示在 `/` 菜单中。
+该命令会输出调用该命令的会话工作目录，以及已发现的命令、技能和规则。已发现的项目命令会注册到会话命令目录并显示在 `/` 菜单中。
 
 ## 许可证
 

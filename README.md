@@ -93,7 +93,7 @@ whenToUse: Before publishing a changed API
 Review the changed API surface.
 ```
 
-The optional `disable-model-invocation`, `user-invocable`, and `metadata` frontmatter fields are passed through to DSH.
+The optional `disable-model-invocation`, `user-invocable`, and `metadata` frontmatter fields are passed through to DSH. Skills are exposed through DSH's Skills catalog and `/` skill source, not the command-only source; unreadable files in one discovery root are skipped so they do not hide skills from other roots.
 
 ## Path-scoped rules
 
@@ -120,7 +120,7 @@ Run the built-in command in an agent session:
 /dsh-extension-status
 ```
 
-It reports the calling session's working directory, scanned roots, and discovered commands. Discovered project commands are registered in the session command directory and appear in the `/` menu.
+It reports the calling session's working directory plus discovered commands, skills, and rules. Discovered project commands are registered in the session command directory and appear in the `/` menu.
 
 ## License
 

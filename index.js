@@ -37,7 +37,10 @@ export function apply(ctx, config = {}) {
   ctx.commands.register({
     name: 'dsh-extension-status',
     description: 'Show dsh-agent-extension discovery status',
-    handler: (invocation) => ({ kind: 'success', text: discovery.statusText(invocation.agent.session.header.cwd ?? process.cwd()) }),
+    handler: async (invocation) => ({
+      kind: 'success',
+      text: await discovery.statusText(invocation.agent.session.header.cwd ?? process.cwd()),
+    }),
   })
   discovery.registerGlobalCommands(process.cwd())
   ctx.on('agent/created', ({ agent }) => register(agent))
@@ -81,8 +84,17 @@ export class WorkspaceDiscovery {
     const roots = await this.skillRoots(options.cwd)
     const candidates = []
     for (const root of roots) {
-      for (const file of await discoverSkillFiles(root.path, this.maxDepth)) {
-        const parsed = await parseSkill(file)
+      for (const file of await discoverSkillFiles(root.path, this.maxDepth, this.ctx.logger)) {
+        let parsed
+        try {
+          parsed = await parseSkill(file)
+        } catch (error) {
+          if (inaccessible(error)) {
+            this.ctx.logger?.warn(`[${name}] cannot read skill file ${file}: ${message(error)}`)
+            continue
+          }
+          throw error
+        }
         if (!parsed) continue
         candidates.push({
           ...parsed,
@@ -129,14 +141,18 @@ export class WorkspaceDiscovery {
     }
   }
 
-  statusText(cwd) {
+  async statusText(cwd) {
     const commands = this.discoverCommands(cwd)
+    const skills = await this.list({ cwd })
+    const rules = this.discoverRules(cwd)
     const roots = this.commandRootsSync(cwd).map((root) => root.path)
     return [
       'dsh-agent-extension is loaded.',
       `Working directory: ${cwd}`,
-      `Scanned roots: ${roots.join(', ')}`,
+      `Scanned command roots: ${roots.join(', ')}`,
       `Discovered commands (${commands.size}): ${[...commands.keys()].join(', ') || '(none)'}`,
+      `Discovered skills (${skills.length}): ${skills.map((skill) => skill.name).join(', ') || '(none)'}`,
+      `Discovered rules (${rules.size}): ${[...rules.keys()].join(', ') || '(none)'}`,
     ].join('\n')
   }
 
@@ -331,31 +347,42 @@ function walkSync(root, depth, maxDepth, visit) {
   }
 }
 
-async function discoverSkillFiles(root, maxDepth) {
+async function discoverSkillFiles(root, maxDepth, logger) {
   const results = []
   await walk(root, 0, maxDepth, async (path, entry) => {
     if (entry.isDirectory() && entry.name !== '.system') {
       const manifest = join(path, 'SKILL.md')
-      if (await isFile(manifest)) results.push(manifest)
+      if (await isFile(manifest, logger)) results.push(manifest)
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
       results.push(path)
     }
-  })
+  }, logger)
   return [...new Set(results)].sort((left, right) => left.localeCompare(right))
 }
 
-async function walk(root, depth, maxDepth, visit) {
+async function walk(root, depth, maxDepth, visit, logger) {
   let entries
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if (absent(error)) return
+    if (absent(error) || inaccessible(error)) {
+      if (inaccessible(error)) logger?.warn(`[${name}] cannot read skill directory ${root}: ${message(error)}`)
+      return
+    }
     throw error
   }
   for (const entry of entries) {
     const path = join(root, entry.name)
-    await visit(path, entry)
-    if (entry.isDirectory() && depth < maxDepth) await walk(path, depth + 1, maxDepth, visit)
+    try {
+      await visit(path, entry)
+      if (entry.isDirectory() && depth < maxDepth) await walk(path, depth + 1, maxDepth, visit, logger)
+    } catch (error) {
+      if (inaccessible(error)) {
+        logger?.warn(`[${name}] cannot read skill path ${path}: ${message(error)}`)
+        continue
+      }
+      throw error
+    }
   }
 }
 
@@ -494,11 +521,15 @@ async function exists(path) {
   }
 }
 
-async function isFile(path) {
+async function isFile(path, logger) {
   try {
     return (await stat(path)).isFile()
   } catch (error) {
     if (absent(error)) return false
+    if (inaccessible(error)) {
+      logger?.warn(`[${name}] cannot read skill file ${path}: ${message(error)}`)
+      return false
+    }
     throw error
   }
 }
@@ -514,6 +545,10 @@ async function readText(path) {
 
 function absent(error) {
   return error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+}
+
+function inaccessible(error) {
+  return error && (error.code === 'EACCES' || error.code === 'EPERM')
 }
 
 function filePathFromToolExecution(exec) {
