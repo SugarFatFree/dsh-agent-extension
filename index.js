@@ -33,7 +33,7 @@ export function apply(ctx, config = {}) {
     }
   }
 
-  // Register the launch workspace immediately so existing sessions do not keep an empty UI cache.
+  // Register launch-workspace commands globally and session commands in an Agent scope.
   ctx.commands.register({
     name: 'dsh-extension-status',
     description: 'Show dsh-agent-extension discovery status',
@@ -155,20 +155,25 @@ export class WorkspaceDiscovery {
   registerCommandsFor(agent) {
     this.unregisterCommandsFor(agent.id)
     const definitions = this.discoverCommands(agent.session.header.cwd)
-    const disposers = []
-    for (const command of definitions.values()) {
-      try {
-        disposers.push(agent.ctx.commands.register({
-          name: command.name,
-          description: command.description,
-          input: { hint: '[arguments]' },
-          handler: (invocation) => this.executeCommand(command, invocation),
-        }))
-      } catch (error) {
-        this.ctx.logger.warn(`[${name}] /${command.name} from ${command.path} ignored: ${message(error)}`)
+    const fiber = agent.ctx.inject(['commands'], (commandCtx) => {
+      for (const command of definitions.values()) {
+        try {
+          commandCtx.commands.register({
+            name: command.name,
+            description: command.description,
+            input: { hint: '[arguments]' },
+            handler: (invocation) => this.executeCommand(command, invocation),
+          })
+        } catch (error) {
+          this.ctx.logger.warn(`[${name}] /${command.name} from ${command.path} ignored: ${message(error)}`)
+        }
       }
-    }
-    this.commandDisposers.set(agent.id, () => disposers.reverse().forEach((dispose) => dispose()))
+    })
+    this.commandDisposers.set(agent.id, () => {
+      void fiber.dispose().catch((error) => {
+        this.ctx.logger.warn(`[${name}] command cleanup failed: ${message(error)}`)
+      })
+    })
   }
 
   recordTouchedPath(agent, path) {
