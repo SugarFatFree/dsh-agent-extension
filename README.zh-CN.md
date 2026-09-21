@@ -39,7 +39,7 @@ dsh plugin --profile web add github:SugarFatFree/dsh-agent-extension
 dsh plugin --profile web add .
 ```
 
-修改本地链接的包后，请重新安装或刷新 Profile 依赖，然后重启 DSH Web。
+修改本地 `file:` 依赖后，请在 Web Profile 目录执行 `pnpm install --force`，以刷新已安装的 `node_modules` 副本，然后重启 DSH Web。
 
 ## 发现目录
 

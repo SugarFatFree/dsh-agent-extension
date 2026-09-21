@@ -39,7 +39,7 @@ From this repository directory:
 dsh plugin --profile web add .
 ```
 
-After changing a locally linked package, reinstall it or refresh the profile dependency, then restart DSH Web.
+After changing a local `file:` dependency, run `pnpm install --force` from the Web profile directory to refresh its installed `node_modules` copy, then restart DSH Web.
 
 ## Discovery roots
 

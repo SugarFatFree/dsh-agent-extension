@@ -7,6 +7,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 export const name = 'dsh-agent-extension'
 export const inject = ['commands', 'skills', 'agents']
 
+const packageVersion = '0.1.4'
 const MAX_NESTING_DEPTH = 6
 const COMMANDS_DIR = 'commands'
 const SKILLS_DIR = 'skills'
@@ -39,7 +40,7 @@ export function apply(ctx, config = {}) {
     description: 'Show dsh-agent-extension discovery status',
     handler: async (invocation) => ({
       kind: 'success',
-      text: await discovery.statusText(invocation.agent.session.header.cwd ?? process.cwd()),
+      text: await discovery.statusText(invocation.agent.session.header.cwd ?? process.cwd(), invocation.agent.id),
     }),
   })
   discovery.registerGlobalCommands(process.cwd())
@@ -67,6 +68,7 @@ export class WorkspaceDiscovery {
     this.dshHome = resolve(config.dshHome ?? process.env.DSH_HOME ?? join(homedir(), '.dsh'))
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
     this.commandDisposers = new Map()
+    this.registeredCommands = new Map()
     this.globalCommandDisposers = []
     this.ruleState = new WeakMap()
     this.invalidate = undefined
@@ -126,6 +128,7 @@ export class WorkspaceDiscovery {
     const previous = this.commandDisposers.get(agentId)
     if (previous) previous()
     this.commandDisposers.delete(agentId)
+    this.registeredCommands.delete(agentId)
   }
 
   registerGlobalCommands(cwd) {
@@ -141,16 +144,22 @@ export class WorkspaceDiscovery {
     }
   }
 
-  async statusText(cwd) {
+  async statusText(cwd, agentId) {
+    const projectRoot = findProjectRootSync(resolve(cwd))
     const commands = this.discoverCommands(cwd)
     const skills = await this.list({ cwd })
     const rules = this.discoverRules(cwd)
-    const roots = this.commandRootsSync(cwd).map((root) => root.path)
+    const registered = agentId === undefined ? [] : this.registeredCommands.get(agentId) ?? []
     return [
-      'dsh-agent-extension is loaded.',
-      `Working directory: ${cwd}`,
-      `Scanned command roots: ${roots.join(', ')}`,
+      `dsh-agent-extension ${packageVersion} is loaded.`,
+      `Process working directory: ${process.cwd()}`,
+      `Session working directory: ${cwd}`,
+      `Project root: ${projectRoot}`,
+      `Scanned command roots: ${this.commandRootsSync(cwd).map((root) => root.path).join(', ')}`,
+      `Scanned skill roots: ${(await this.skillRoots(cwd)).map((root) => root.path).join(', ')}`,
+      `Scanned rule roots: ${this.ruleRootsSync(cwd).map((root) => root.path).join(', ')}`,
       `Discovered commands (${commands.size}): ${[...commands.keys()].join(', ') || '(none)'}`,
+      `Registered session commands (${registered.length}): ${registered.join(', ') || '(none)'}`,
       `Discovered skills (${skills.length}): ${skills.map((skill) => skill.name).join(', ') || '(none)'}`,
       `Discovered rules (${rules.size}): ${[...rules.keys()].join(', ') || '(none)'}`,
     ].join('\n')
@@ -159,7 +168,7 @@ export class WorkspaceDiscovery {
   discoverCommands(cwd) {
     const definitions = new Map()
     for (const root of this.commandRootsSync(cwd)) {
-      for (const file of discoverMarkdownFilesSync(root.path, this.maxDepth)) {
+      for (const file of discoverMarkdownFilesSync(root.path, this.maxDepth, this.ctx.logger)) {
         const command = parseCommandSync(file)
         if (!command) continue
         if (!definitions.has(command.name)) definitions.set(command.name, command)
@@ -185,6 +194,7 @@ export class WorkspaceDiscovery {
         }
       }
     })
+    this.registeredCommands.set(agent.id, [...definitions.keys()])
     this.commandDisposers.set(agent.id, () => {
       void fiber.dispose().catch((error) => {
         this.ctx.logger.warn(`[${name}] command cleanup failed: ${message(error)}`)
@@ -202,9 +212,10 @@ export class WorkspaceDiscovery {
 
   rulesForStep(agent, messages) {
     const cwd = agent.session.header.cwd ?? process.cwd()
+    const projectRoot = findProjectRootSync(resolve(cwd))
     const state = this.ruleState.get(agent.session) ?? { loaded: new Set(), touched: new Set() }
     for (const message of messages) {
-      for (const path of pathsMentioned(message)) state.touched.add(normalizeWorkspacePath(path, cwd))
+      for (const path of pathsMentioned(message)) state.touched.add(normalizeWorkspacePath(path, projectRoot))
     }
     const selected = []
     for (const rule of this.discoverRules(cwd).values()) {
@@ -324,26 +335,37 @@ async function discoverMarkdownFiles(root, maxDepth) {
   return results.sort((left, right) => left.localeCompare(right))
 }
 
-function discoverMarkdownFilesSync(root, maxDepth) {
+function discoverMarkdownFilesSync(root, maxDepth, logger) {
   const results = []
   walkSync(root, 0, maxDepth, (path, entry) => {
     if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) results.push(path)
-  })
+  }, logger)
   return results.sort((left, right) => left.localeCompare(right))
 }
 
-function walkSync(root, depth, maxDepth, visit) {
+function walkSync(root, depth, maxDepth, visit, logger) {
   let entries
   try {
     entries = readdirSync(root, { withFileTypes: true })
   } catch (error) {
-    if (absent(error)) return
+    if (absent(error) || inaccessible(error)) {
+      if (inaccessible(error)) logger?.warn(`[${name}] cannot read directory ${root}: ${message(error)}`)
+      return
+    }
     throw error
   }
   for (const entry of entries) {
     const path = join(root, entry.name)
-    visit(path, entry)
-    if (entry.isDirectory() && depth < maxDepth) walkSync(path, depth + 1, maxDepth, visit)
+    try {
+      visit(path, entry)
+      if (entry.isDirectory() && depth < maxDepth) walkSync(path, depth + 1, maxDepth, visit, logger)
+    } catch (error) {
+      if (inaccessible(error)) {
+        logger?.warn(`[${name}] cannot read path ${path}: ${message(error)}`)
+        continue
+      }
+      throw error
+    }
   }
 }
 
