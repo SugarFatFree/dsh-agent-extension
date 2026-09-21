@@ -1,0 +1,43 @@
+{
+  "name": "dsh-agent-extension",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin for workspace commands, skills, and path-scoped rules.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "agent",
+    "skills",
+    "commands"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SugarFatFree/dsh-agent-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SugarFatFree/dsh-agent-extension/issues"
+  },
+  "homepage": "https://github.com/SugarFatFree/dsh-agent-extension#readme",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.2"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  }
+}
