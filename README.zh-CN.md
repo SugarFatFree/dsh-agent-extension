@@ -31,6 +31,16 @@ dsh plugin --profile web add github:SugarFatFree/dsh-agent-extension
 
 安装后请重启 DSH Web 进程并刷新浏览器页面。新建或恢复一个会话后，斜杠命令目录会重新建立。
 
+### 发布状态
+
+当前项目仅通过 GitHub 分发，尚未发布到 npm。GitHub 安装路径是完整受支持的，不需要 npm 账号：
+
+```sh
+dsh plugin --profile web add github:SugarFatFree/dsh-agent-extension
+```
+
+后续可能会提供更短的 npm 包名安装方式，但 npm 发布是可选项，不影响 DSH 兼容性或插件目录收录。
+
 ### 本地开发安装
 
 在本仓库目录中执行：

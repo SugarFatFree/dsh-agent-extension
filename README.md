@@ -31,6 +31,16 @@ DSH recognizes this package as a plugin because its `package.json` declares `dsh
 
 Restart the DSH Web process and refresh the browser after installation. Create a new session or resume an existing one to refresh its slash-command catalog.
 
+### Distribution status
+
+This project is currently distributed from GitHub only; it is not published to npm. GitHub installation is fully supported and does not require an npm account:
+
+```sh
+dsh plugin --profile web add github:SugarFatFree/dsh-agent-extension
+```
+
+A future npm release may provide a shorter package-name install command, but npm publication is optional and does not affect DSH compatibility or catalog listing.
+
 ### Local development install
 
 From this repository directory:
