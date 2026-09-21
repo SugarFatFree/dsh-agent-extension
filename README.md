@@ -120,7 +120,7 @@ Run the built-in command in an agent session:
 /dsh-extension-status
 ```
 
-It reports the working directory, scanned roots, and discovered commands.
+It reports the calling session's working directory, scanned roots, and discovered commands.
 
 ## License
 

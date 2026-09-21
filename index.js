@@ -37,7 +37,7 @@ export function apply(ctx, config = {}) {
   ctx.commands.register({
     name: 'dsh-extension-status',
     description: 'Show dsh-agent-extension discovery status',
-    handler: () => ({ kind: 'success', text: discovery.statusText(process.cwd()) }),
+    handler: (invocation) => ({ kind: 'success', text: discovery.statusText(invocation.agent.session.header.cwd ?? process.cwd()) }),
   })
   discovery.registerGlobalCommands(process.cwd())
   ctx.on('agent/created', ({ agent }) => register(agent))

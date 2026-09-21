@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness plugin for workspace commands, skills, and path-scoped rules.",
   "keywords": [
     "deepseek-harness",
