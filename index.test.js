@@ -68,6 +68,34 @@ test('registers commands in the agent command scope', async () => {
   assert.deepEqual(registered.map((entry) => entry.name), ['release'])
 })
 
+test('refreshes an existing session when a command file is added', async () => {
+  const root = await fixture()
+  const instance = discovery(root)
+  const registrations = []
+  const agent = {
+    id: 'agent-watch',
+    session: { header: { cwd: root } },
+    ctx: {
+      inject(_dependencies, setup) {
+        const batch = []
+        setup({ commands: { register(definition) { batch.push(definition); return () => {} } } })
+        registrations.push(batch)
+        return { dispose: async () => {} }
+      },
+    },
+  }
+
+  instance.registerCommandsFor(agent)
+  const watcher = instance.startCommandWatch(agent)
+  await new Promise((resolve) => watcher.once('ready', resolve))
+  await markdown(join(root, '.agents/commands/aa.md'), '# /aa - Added command\n\nRun aa.\n')
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  instance.stopCommandWatch(agent.id)
+
+  assert.deepEqual(registrations.at(-1).map((entry) => entry.name), ['aa'])
+  assert.deepEqual(instance.registeredCommands.get(agent.id), ['aa'])
+})
+
 test('selects matching rules once using project-relative paths', async () => {
   const root = await fixture()
   const rule = (name, paths) => `---\nname: ${name}\npaths:\n${paths.map((path) => `  - "${path}"`).join('\n')}\n---\n\n${name} body.\n`

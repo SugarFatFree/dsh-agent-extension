@@ -89,6 +89,8 @@ Read the release checklist and prepare the release notes.
 
 输入 `/release optional arguments` 后，DSH 会启动一个普通 Agent 回合，并将命令正文与参数作为任务指令传入。
 
+命令根目录会监听 Markdown 文件的新增、修改、删除以及嵌套目录变化。新增 `.agents/commands/aa.md` 后，已打开的会话会获得 `/aa`，无需重启 DSH Web；命令菜单通过 DSH 的实时命令变更事件更新。仅当浏览器连接中断时才需要刷新页面。
+
 ## 技能
 
 技能可以是单个 Markdown 文件，也可以是包含 `SKILL.md` 的目录包。技能必须使用标准 YAML frontmatter，并提供 kebab-case 格式的 `name` 与 `description`。

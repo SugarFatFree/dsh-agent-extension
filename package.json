@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-extension",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "DeepSeek Harness plugin for workspace commands, skills, and path-scoped rules.",
   "keywords": [
     "deepseek-harness",
@@ -35,6 +35,9 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-llm": "^0.1.5-rc.2"

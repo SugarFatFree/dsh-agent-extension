@@ -89,6 +89,8 @@ Read the release checklist and prepare the release notes.
 
 Entering `/release optional arguments` starts a normal agent turn with the command body and supplied arguments as task instructions.
 
+Command roots are watched for Markdown additions, edits, deletions, and nested directory changes. After adding `.agents/commands/aa.md`, an already-open session receives `/aa` without restarting DSH Web; the command menu updates through DSH's live command-change event. Refresh the browser only if its connection was interrupted.
+
 ## Skills
 
 A skill is either a Markdown file or a directory bundle containing `SKILL.md`. Skills require standard YAML frontmatter with a kebab-case `name` and `description`.

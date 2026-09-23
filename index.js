@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import chokidar from 'chokidar'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -7,8 +8,9 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 export const name = 'dsh-agent-extension'
 export const inject = ['commands', 'skills', 'agents']
 
-const packageVersion = '0.1.4'
+const packageVersion = '0.1.5'
 const MAX_NESTING_DEPTH = 6
+const COMMAND_WATCH_DEBOUNCE_MS = 100
 const COMMANDS_DIR = 'commands'
 const SKILLS_DIR = 'skills'
 const RULES_DIR = 'rules'
@@ -29,6 +31,7 @@ export function apply(ctx, config = {}) {
   const register = (agent) => {
     try {
       discovery.registerCommandsFor(agent)
+      discovery.startCommandWatch(agent)
     } catch (error) {
       ctx.logger.warn(`[${name}] command discovery failed: ${message(error)}`)
     }
@@ -57,7 +60,10 @@ export function apply(ctx, config = {}) {
     const path = filePathFromToolExecution(exec)
     if (path !== undefined) discovery.recordTouchedPath(exec.agent, path)
   })
-  ctx.on('agent/disposed', ({ agent }) => discovery.unregisterCommandsFor(agent.id))
+  ctx.on('agent/disposed', ({ agent }) => {
+    discovery.stopCommandWatch(agent.id)
+    discovery.unregisterCommandsFor(agent.id)
+  })
   for (const agent of ctx.agents.list()) register(agent)
 }
 
@@ -69,6 +75,8 @@ export class WorkspaceDiscovery {
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
     this.commandDisposers = new Map()
     this.registeredCommands = new Map()
+    this.commandWatchers = new Map()
+    this.commandRefreshTimers = new Map()
     this.globalCommandDisposers = []
     this.ruleState = new WeakMap()
     this.invalidate = undefined
@@ -129,6 +137,50 @@ export class WorkspaceDiscovery {
     if (previous) previous()
     this.commandDisposers.delete(agentId)
     this.registeredCommands.delete(agentId)
+  }
+
+  startCommandWatch(agent) {
+    this.stopCommandWatch(agent.id)
+    const roots = this.commandRootsSync(agent.session.header.cwd).map((root) => root.path)
+    // Anchor at an existing ancestor so a future .dsh/.agents/commands tree is observed too.
+    const watcher = chokidar.watch([...new Set(roots.map(commandWatchAnchor))], {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: COMMAND_WATCH_DEBOUNCE_MS, pollInterval: 25 },
+    })
+    watcher.on('all', (_event, path) => {
+      if (!isCommandPath(path, roots)) return
+      this.scheduleCommandRefresh(agent)
+    })
+    watcher.on('ready', () => this.scheduleCommandRefresh(agent))
+    watcher.on('error', (error) => {
+      this.ctx.logger?.warn(`[${name}] command watcher failed for ${agent.id}: ${message(error)}`)
+    })
+    this.commandWatchers.set(agent.id, watcher)
+    return watcher
+  }
+
+  stopCommandWatch(agentId) {
+    const timer = this.commandRefreshTimers.get(agentId)
+    if (timer !== undefined) clearTimeout(timer)
+    this.commandRefreshTimers.delete(agentId)
+    const watcher = this.commandWatchers.get(agentId)
+    if (watcher !== undefined) void watcher.close().catch((error) => {
+      this.ctx.logger?.warn(`[${name}] command watcher cleanup failed: ${message(error)}`)
+    })
+    this.commandWatchers.delete(agentId)
+  }
+
+  scheduleCommandRefresh(agent) {
+    if (this.commandRefreshTimers.has(agent.id)) return
+    const timer = setTimeout(() => {
+      this.commandRefreshTimers.delete(agent.id)
+      try {
+        this.registerCommandsFor(agent)
+      } catch (error) {
+        this.ctx.logger?.warn(`[${name}] command refresh failed: ${message(error)}`)
+      }
+    }, COMMAND_WATCH_DEBOUNCE_MS)
+    this.commandRefreshTimers.set(agent.id, timer)
   }
 
   registerGlobalCommands(cwd) {
@@ -306,6 +358,7 @@ export class WorkspaceDiscovery {
   }
 
   dispose() {
+    for (const agentId of this.commandWatchers.keys()) this.stopCommandWatch(agentId)
     for (const dispose of this.commandDisposers.values()) dispose()
     this.commandDisposers.clear()
     for (const dispose of this.globalCommandDisposers.reverse()) dispose()
@@ -588,6 +641,21 @@ function pathsMentioned(message) {
     for (const match of block.text.matchAll(/(?:^|\s)(?:@)?([A-Za-z]:[\\/][^\s`"']+|\.?(?:[\\/][^\s`"']+)+\.[A-Za-z0-9]+|(?:code|web|server)[\\/][^\s`"']+)/g)) paths.push(match[1])
   }
   return paths
+}
+
+function commandWatchAnchor(path) {
+  let current = path
+  while (!existsSync(current)) {
+    const parent = dirname(current)
+    if (parent === current) return current
+    current = parent
+  }
+  return current
+}
+
+function isCommandPath(path, roots) {
+  const normalized = resolve(path)
+  return roots.some((root) => normalized === root || normalized.startsWith(`${root}/`) || normalized.startsWith(`${root}\\`))
 }
 
 function normalizeWorkspacePath(path, cwd) {
